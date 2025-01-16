@@ -3,6 +3,7 @@ package pipeg
 type Metricer interface {
 	IncPipelineFailed(pipeline string)
 	IncPipelineProcessed(pipeline string)
+	IncPipelineBreak(pipeline, stage, reason string)
 
 	IncStageFailed(pipeline, stage string)
 	IncStageProcessed(pipeline, stage string)

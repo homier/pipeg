@@ -2,22 +2,45 @@ package pipeg
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
 )
 
-type Stage[T any] interface {
-	WithLogger(logger *slog.Logger) Stage[T]
+type Stager[T any] interface {
+	SetLogger(logger *slog.Logger)
 	Config() StageConfig
 
 	Process(ctx context.Context, entry T) error
 }
 
+type Stage[T any] struct {
+	Cfg    StageConfig
+	Logger *slog.Logger
+}
+
+var _ Stager[any] = (*Stage[any])(nil)
+
+// Config implements Stager.
+func (s *Stage[T]) Config() StageConfig {
+	return s.Cfg
+}
+
+// Process implements Stager.
+func (s *Stage[T]) Process(ctx context.Context, entry T) error {
+	return errors.New("not implemented")
+}
+
+// SetLogger implements Stager.
+func (s *Stage[T]) SetLogger(logger *slog.Logger) {
+	s.Logger = logger
+}
+
 type StageConfig struct {
-	Name    string `json:"name"`
-	Enabled bool   `json:"enabled"`
+	Name     string `json:"name"`
+	Disabled bool   `json:"disabled"`
 
 	Retry *StageRetry `json:"retry"`
 }
