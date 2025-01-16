@@ -30,7 +30,7 @@ func (s *Stage[T]) Config() StageConfig {
 
 // Process implements Stager.
 func (s *Stage[T]) Process(ctx context.Context, entry T) error {
-	return errors.New("not implemented")
+	return PermanentError(errors.New("not implemented"))
 }
 
 // SetLogger implements Stager.
@@ -38,9 +38,34 @@ func (s *Stage[T]) SetLogger(logger *slog.Logger) {
 	s.Logger = logger
 }
 
+type StageOneliner[T any] struct {
+	Stage[T]
+
+	Do func(ctx context.Context, logger *slog.Logger, entry T) error
+}
+
+func (s *StageOneliner[T]) Process(ctx context.Context, entry T) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	return s.Do(ctx, s.Logger, entry)
+}
+
+func NewStageOneliner[T any](
+	do func(ctx context.Context, logger *slog.Logger, entry T) error,
+	config StageConfig,
+) *StageOneliner[T] {
+	return &StageOneliner[T]{Stage: Stage[T]{
+		Cfg:    config,
+		Logger: slog.Default(),
+	}, Do: do}
+}
+
 type StageConfig struct {
 	Name     string `json:"name"`
 	Disabled bool   `json:"disabled"`
+
+	Timeout time.Duration `json:"timeout"`
 
 	Retry *StageRetry `json:"retry"`
 }

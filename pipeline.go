@@ -95,13 +95,19 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 }
 
 func (p *Pipeline[T]) processStage(ctx context.Context, stage Stager[T], entry T) (err error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	config := stage.Config()
 	if config.Disabled {
 		return nil
 	}
+
+	var cancel context.CancelFunc
+	if config.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, config.Timeout)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+
+	defer cancel()
 
 	if p.Metricer != nil {
 		observer := p.Metricer.StageTimer(p.Name, config.Name)

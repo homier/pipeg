@@ -1,6 +1,15 @@
 package pipeg
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/cenkalti/backoff/v5"
+)
+
+var (
+	ErrStageTimeout = errors.New("stage has timed out")
+)
 
 type BreakError struct {
 	Err    error
@@ -11,7 +20,7 @@ var _ error = (*BreakError)(nil)
 
 // Error implements error.
 func (b *BreakError) Error() string {
-	return fmt.Sprintf("%s: %w", b.Reason, b.Err.Error())
+	return fmt.Sprintf("%s: %s", b.Reason, b.Err)
 }
 
 func (b *BreakError) Unwrap() error {
@@ -26,4 +35,8 @@ func IsBreak(err error) (*BreakError, bool) {
 	b, ok := err.(*BreakError)
 
 	return b, ok
+}
+
+func PermanentError(err error) error {
+	return backoff.Permanent(err)
 }
