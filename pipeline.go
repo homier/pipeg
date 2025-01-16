@@ -12,11 +12,14 @@ type Pipeline[T any] struct {
 	Stages   []Stager[T]
 	Logger   *slog.Logger
 	Metricer Metricer
+
+	Verbose bool
 }
 
 type Config struct {
 	Logger   *slog.Logger
 	Metricer Metricer
+	Verbose  bool
 }
 
 func New[T any](
@@ -33,6 +36,7 @@ func New[T any](
 		Stages:   make([]Stager[T], len(stages)),
 		Logger:   config.Logger.With(slog.String("pipeline", name)),
 		Metricer: config.Metricer,
+		Verbose:  config.Verbose,
 	}
 
 	for idx, stage := range stages {
@@ -48,11 +52,10 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	p.Logger.Debug("starting entry processing")
-	defer p.Logger.Debug("entry processing completed")
+	p.logVerbose(func() { p.Logger.Debug("starting entry processing") })
+	defer p.logVerbose(func() { p.Logger.Debug("entry processing completed") })
 
 	pipelineBreak := false
-
 	if p.Metricer != nil {
 		observer := p.Metricer.PipelineTimer(p.Name)
 		defer observer.ObserveDuration()
@@ -70,7 +73,7 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 	}
 
 	for _, stage := range p.Stages {
-		if err := p.processStage(ctx, stage, entry); err != nil {
+		if err := p.executeStage(ctx, stage, entry); err != nil {
 			if err, ok := IsBreak(err); ok {
 				pipelineBreak = true
 
@@ -94,11 +97,26 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 	return nil
 }
 
-func (p *Pipeline[T]) processStage(ctx context.Context, stage Stager[T], entry T) (err error) {
+func (p *Pipeline[T]) executeStage(ctx context.Context, stage Stager[T], entry T) (err error) {
 	config := stage.Config()
+	logger := p.Logger.With(slog.String("stage", config.Name))
+
 	if config.Disabled {
+		p.logVerbose(func() { logger.Debug("stage is disabled, skipping") })
+
 		return nil
 	}
+
+	p.logVerbose(func() { logger.Debug("processing stage") })
+	defer func() {
+		if err != nil {
+			logger.Error("stage executing has failed", slog.String("error", err.Error()))
+
+			return
+		}
+
+		p.logVerbose(func() { logger.Debug("stage executing completed") })
+	}()
 
 	var cancel context.CancelFunc
 	if config.Timeout > 0 {
@@ -124,12 +142,12 @@ func (p *Pipeline[T]) processStage(ctx context.Context, stage Stager[T], entry T
 	}
 
 	if config.Retry == nil {
-		return stage.Process(ctx, entry)
+		return stage.Execute(ctx, entry)
 	}
 
 	_, err = backoff.Retry(
 		ctx, func() (any, error) {
-			if err := stage.Process(ctx, entry); err != nil {
+			if err := stage.Execute(ctx, entry); err != nil {
 				if _, ok := IsBreak(err); ok {
 					return nil, backoff.Permanent(err)
 				}
@@ -156,30 +174,35 @@ func (p *Pipeline[T]) processStage(ctx context.Context, stage Stager[T], entry T
 }
 
 func (p *Pipeline[T]) getStageBackoff(name string, config *StageRetry) backoff.BackOff {
-	switch config.Policy {
-	case StageRetryPolicyExponential:
+	exponential := func() backoff.BackOff {
 		b := backoff.NewExponentialBackOff()
 		b.MaxInterval = config.MaxInterval
 		b.RandomizationFactor = config.RandomizationFactor
 		b.Multiplier = config.Multiplier
 
 		return b
+	}
+
+	switch config.Policy {
+	case StageRetryPolicyExponential:
+		return exponential()
 	case StageRetryPolicyConstant:
 		return backoff.NewConstantBackOff(config.MaxInterval)
 	case StageRetryPolicyImmediate:
 		return &backoff.ZeroBackOff{}
 	default:
-		p.Logger.Debug(
+		p.Logger.Warn(
 			"unknown stage retry policy, exponential will be used",
 			slog.String("stage", name),
 			slog.Int("retry_policy", int(config.Policy)),
 		)
 
-		b := backoff.NewExponentialBackOff()
-		b.MaxInterval = config.MaxInterval
-		b.RandomizationFactor = config.RandomizationFactor
-		b.Multiplier = config.Multiplier
+		return exponential()
+	}
+}
 
-		return b
+func (p *Pipeline[T]) logVerbose(f func()) {
+	if p.Verbose {
+		f()
 	}
 }

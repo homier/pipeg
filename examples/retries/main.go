@@ -3,7 +3,8 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log/slog"
+	"os"
 
 	"github.com/homier/pipeg"
 )
@@ -12,18 +13,7 @@ type Message struct {
 	Data []byte `json:"data"`
 }
 
-type Validator struct {
-	pipeg.Stage[*Message]
-}
-
-func NewValidator() *Validator {
-	return &Validator{Stage: pipeg.Stage[*Message]{Cfg: pipeg.StageConfig{
-		Name:  "validator",
-		Retry: pipeg.StageRetryDefault(),
-	}}}
-}
-
-func (v *Validator) Process(ctx context.Context, message *Message) error {
+func ValidateMessage(ctx context.Context, _ *slog.Logger, message *Message) error {
 	if message.Data == nil {
 		message.Data = []byte("data")
 
@@ -34,12 +24,19 @@ func (v *Validator) Process(ctx context.Context, message *Message) error {
 }
 
 func main() {
-	pipe := pipeg.New("retries", pipeg.Config{}, NewValidator())
-	message := &Message{}
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}))
 
+	pipe := pipeg.New("retries", pipeg.Config{Logger: logger}, pipeg.NewStage(ValidateMessage, pipeg.StageConfig{
+		Name:  "validate",
+		Retry: pipeg.StageRetryDefault(),
+	}))
+
+	message := &Message{}
 	if err := pipe.Process(context.Background(), message); err != nil {
 		panic(err)
 	}
 
-	fmt.Printf("pipe succeeded: %s\n", string(message.Data))
+	logger.Info("pipeline completed", slog.String("data", string(message.Data)))
 }
