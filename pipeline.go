@@ -62,7 +62,12 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 
 		defer func() {
 			if err != nil {
-				p.Metricer.IncPipelineFailed(p.Name)
+				reason := "internal"
+				if err, ok := IsReason(err); ok {
+					reason = err.Reason
+				}
+
+				p.Metricer.IncPipelineFailed(p.Name, reason)
 				return
 			}
 
@@ -133,7 +138,12 @@ func (p *Pipeline[T]) executeStage(ctx context.Context, stage Stager[T], entry T
 
 		defer func() {
 			if err != nil {
-				p.Metricer.IncStageFailed(p.Name, config.Name)
+				reason := "internal"
+				if err, ok := IsReason(err); ok {
+					reason = err.Reason
+				}
+
+				p.Metricer.IncStageFailed(p.Name, config.Name, reason)
 				return
 			}
 

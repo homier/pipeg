@@ -11,24 +11,40 @@ var (
 	ErrStageTimeout = errors.New("stage has timed out")
 )
 
-type BreakError struct {
+type ReasonedError struct {
 	Err    error
 	Reason string
 }
 
-var _ error = (*BreakError)(nil)
+var _ error = (*ReasonedError)(nil)
 
 // Error implements error.
-func (b *BreakError) Error() string {
-	return fmt.Sprintf("%s: %s", b.Reason, b.Err)
+func (r *ReasonedError) Error() string {
+	return fmt.Sprintf("%s: %s", r.Reason, r.Err)
 }
 
-func (b *BreakError) Unwrap() error {
-	return b.Err
+func (r *ReasonedError) Unwrap() error {
+	return r.Err
 }
+
+func Reason(err error, reason string) error {
+	return &ReasonedError{Err: err, Reason: reason}
+}
+
+func IsReason(err error) (*ReasonedError, bool) {
+	r, ok := err.(*ReasonedError)
+
+	return r, ok
+}
+
+type BreakError struct {
+	ReasonedError
+}
+
+var _ error = (*BreakError)(nil)
 
 func Break(err error, reason string) error {
-	return &BreakError{Err: err, Reason: reason}
+	return &BreakError{ReasonedError: ReasonedError{Err: err, Reason: reason}}
 }
 
 func IsBreak(err error) (*BreakError, bool) {
