@@ -8,8 +8,9 @@ import (
 )
 
 type Pipeline[T any] struct {
-	Name     string
-	Stages   []Stager[T]
+	Name   string
+	Stages []Stager[T]
+
 	Logger   *slog.Logger
 	Metricer Metricer
 
@@ -40,7 +41,7 @@ func New[T any](
 	}
 
 	for idx, stage := range stages {
-		stage.SetLogger(p.Logger.With("stage", stage.Config().Name))
+		stage.SetLogger(p.Logger.With("stage", stage.GetName()))
 
 		p.Stages[idx] = stage
 	}
@@ -83,13 +84,13 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 				pipelineBreak = true
 
 				p.Logger.Debug(
-					"breaking from pipeline upong stage request",
+					"breaking from pipeline upon stage request",
 					slog.String("error", err.Error()),
-					slog.String("stage", stage.Config().Name),
+					slog.String("stage", stage.GetName()),
 				)
 
 				if p.Metricer != nil {
-					p.Metricer.IncPipelineBreak(p.Name, stage.Config().Name, err.Reason)
+					p.Metricer.IncPipelineBreak(p.Name, stage.GetName(), err.Reason)
 				}
 
 				return nil
@@ -103,9 +104,9 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 }
 
 func (p *Pipeline[T]) executeStage(ctx context.Context, stage Stager[T], entry T) (err error) {
-	config := stage.Config()
-	logger := p.Logger.With(slog.String("stage", config.Name))
+	logger := p.Logger.With(slog.String("stage", stage.GetName()))
 
+	config := stage.GetConfig()
 	if config.Disabled {
 		p.logVerbose(func() { logger.Debug("stage is disabled, skipping") })
 
@@ -133,7 +134,7 @@ func (p *Pipeline[T]) executeStage(ctx context.Context, stage Stager[T], entry T
 	defer cancel()
 
 	if p.Metricer != nil {
-		observer := p.Metricer.StageTimer(p.Name, config.Name)
+		observer := p.Metricer.StageTimer(p.Name, stage.GetName())
 		defer observer.ObserveDuration()
 
 		defer func() {
@@ -143,11 +144,11 @@ func (p *Pipeline[T]) executeStage(ctx context.Context, stage Stager[T], entry T
 					reason = err.Reason
 				}
 
-				p.Metricer.IncStageFailed(p.Name, config.Name, reason)
+				p.Metricer.IncStageFailed(p.Name, stage.GetName(), reason)
 				return
 			}
 
-			p.Metricer.IncStageProcessed(p.Name, config.Name)
+			p.Metricer.IncStageProcessed(p.Name, stage.GetName())
 		}()
 	}
 
@@ -167,7 +168,7 @@ func (p *Pipeline[T]) executeStage(ctx context.Context, stage Stager[T], entry T
 
 			return nil, nil
 		},
-		backoff.WithBackOff(p.getStageBackoff(config.Name, config.Retry)),
+		backoff.WithBackOff(p.getStageBackoff(stage.GetName(), config.Retry)),
 		backoff.WithMaxTries(config.Retry.MaxAttempts),
 		backoff.WithMaxElapsedTime(config.Retry.MaxElapsedTime),
 	)

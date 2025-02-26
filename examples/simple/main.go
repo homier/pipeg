@@ -23,9 +23,10 @@ func main() {
 		Level: slog.LevelDebug,
 	}))
 
-	pipe := pipeg.New("simple", pipeg.Config{Logger: logger, Verbose: true}, pipeg.NewStage(Incremenet, pipeg.StageConfig{
-		Name: "incrementor",
-	}))
+	pipe := pipeg.New(
+		"simple", pipeg.Config{Logger: logger, Verbose: true},
+		pipeg.NewStage("incrementor", Incremenet, pipeg.StageConfig{}),
+	)
 
 	message := &Message{}
 	if err := pipe.Process(context.Background(), message); err != nil {

@@ -10,13 +10,15 @@ import (
 
 type Stager[T any] interface {
 	SetLogger(logger *slog.Logger)
-	Config() StageConfig
+	GetConfig() StageConfig
+	GetName() string
 
 	Execute(ctx context.Context, entry T) error
 }
 
 type Stage[T any] struct {
-	Cfg    StageConfig
+	Name   string
+	Config StageConfig
 	Logger *slog.Logger
 
 	Do StageDo[T]
@@ -26,13 +28,18 @@ type StageDo[T any] func(ctx context.Context, logger *slog.Logger, entry T) erro
 
 var _ Stager[any] = (*Stage[any])(nil)
 
-func NewStage[T any](doFunc StageDo[T], config StageConfig) *Stage[T] {
-	return &Stage[T]{Cfg: config, Do: doFunc}
+func NewStage[T any](name string, doFunc StageDo[T], config StageConfig) *Stage[T] {
+	return &Stage[T]{Name: name, Config: config, Do: doFunc}
 }
 
-// Config implements Stager.
-func (s *Stage[T]) Config() StageConfig {
-	return s.Cfg
+// GetName implements Stager.
+func (s *Stage[T]) GetName() string {
+	return s.Name
+}
+
+// GetConfig implements Stager.
+func (s *Stage[T]) GetConfig() StageConfig {
+	return s.Config
 }
 
 // SetLogger implements Stager.
@@ -49,8 +56,7 @@ func (s *Stage[T]) Execute(ctx context.Context, entry T) error {
 }
 
 type StageConfig struct {
-	Name     string `json:"name"`
-	Disabled bool   `json:"disabled"`
+	Disabled bool `json:"disabled"`
 
 	Timeout time.Duration `json:"timeout"`
 
