@@ -12,8 +12,26 @@ type Message struct {
 	Counter int `json:"counter"`
 }
 
-func IncrementCounter(ctx context.Context, _ *slog.Logger, message *Message) error {
-	message.Counter++
+func (m *Message) Inc() {
+	m.Counter += 1
+}
+
+func (m *Message) Dec() {
+	m.Counter -= 1
+}
+
+func (m *Message) Get() int {
+	return m.Counter
+}
+
+type Counter interface {
+	Inc()
+	Dec()
+	Get() int
+}
+
+func IncrementCounter(ctx context.Context, _ *slog.Logger, message Counter) error {
+	message.Inc()
 
 	return nil
 }
@@ -33,5 +51,5 @@ func main() {
 		panic(err)
 	}
 
-	logger.Info("message has been processed", slog.Int("counter", message.Counter))
+	logger.Info("message has been processed", slog.Int("counter", message.Get()))
 }

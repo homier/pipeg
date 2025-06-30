@@ -28,9 +28,13 @@ func main() {
 		Level: slog.LevelDebug,
 	}))
 
-	pipe := pipeg.New("retries", pipeg.Config{Logger: logger}, pipeg.NewStage("validator", ValidateMessage, pipeg.StageConfig{
-		Retry: pipeg.StageRetryDefault(),
-	}))
+	pipe := pipeg.New(
+		"retries",
+		pipeg.Config{Logger: logger},
+		pipeg.NewStage("validator", ValidateMessage, pipeg.StageConfig{
+			Retry: pipeg.StageRetryDefault(),
+		}),
+	)
 
 	message := &Message{}
 	if err := pipe.Process(context.Background(), message); err != nil {

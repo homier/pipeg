@@ -27,7 +27,7 @@ func (r *ReasonedError) Unwrap() error {
 	return r.Err
 }
 
-func Reason(err error, reason string) error {
+func NewReasonedError(err error, reason string) error {
 	return &ReasonedError{Err: err, Reason: reason}
 }
 
@@ -43,7 +43,7 @@ type BreakError struct {
 
 var _ error = (*BreakError)(nil)
 
-func Break(err error, reason string) error {
+func NewBreakError(err error, reason string) error {
 	return &BreakError{ReasonedError: ReasonedError{Err: err, Reason: reason}}
 }
 

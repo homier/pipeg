@@ -56,7 +56,7 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 	p.logVerbose(func() { p.Logger.Debug("starting entry processing") })
 	defer p.logVerbose(func() { p.Logger.Debug("entry processing completed") })
 
-	pipelineBreak := false
+	shouldBreak := false
 	if p.Metricer != nil {
 		observer := p.Metricer.PipelineTimer(p.Name)
 		defer observer.ObserveDuration()
@@ -72,7 +72,7 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 				return
 			}
 
-			if !pipelineBreak {
+			if !shouldBreak {
 				p.Metricer.IncPipelineProcessed(p.Name)
 			}
 		}()
@@ -81,7 +81,7 @@ func (p *Pipeline[T]) Process(ctx context.Context, entry T) (err error) {
 	for _, stage := range p.Stages {
 		if err := p.executeStage(ctx, stage, entry); err != nil {
 			if err, ok := IsBreak(err); ok {
-				pipelineBreak = true
+				shouldBreak = true
 
 				p.Logger.Debug(
 					"breaking from pipeline upon stage request",
