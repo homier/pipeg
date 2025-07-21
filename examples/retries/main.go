@@ -5,12 +5,35 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"time"
+
+	"github.com/cenkalti/backoff/v5"
 
 	"github.com/homier/pipeg"
 )
 
 type Message struct {
 	Data []byte `json:"data"`
+}
+
+type ValidateMessageRetrier struct {
+}
+
+func (r *ValidateMessageRetrier) Retry(ctx context.Context, f func() (any, error)) error {
+	b := &backoff.ExponentialBackOff{
+		InitialInterval:     time.Millisecond * 5,
+		MaxInterval:         time.Second,
+		Multiplier:          backoff.DefaultMultiplier,
+		RandomizationFactor: backoff.DefaultRandomizationFactor,
+	}
+
+	_, err := backoff.Retry(
+		ctx, f,
+		backoff.WithBackOff(b),
+		backoff.WithMaxTries(3),
+	)
+
+	return err
 }
 
 func ValidateMessage(ctx context.Context, _ *slog.Logger, message *Message) error {
@@ -31,9 +54,7 @@ func main() {
 	pipe := pipeg.New(
 		"retries",
 		pipeg.Config{Logger: logger},
-		pipeg.NewStage("validator", ValidateMessage, pipeg.StageConfig{
-			Retry: pipeg.StageRetryDefault(),
-		}),
+		pipeg.NewStageRetryable("validator", ValidateMessage, pipeg.StageConfig{}, &ValidateMessageRetrier{}),
 	)
 
 	message := &Message{}

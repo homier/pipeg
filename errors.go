@@ -56,3 +56,9 @@ func IsBreak(err error) (*BreakError, bool) {
 func PermanentError(err error) error {
 	return backoff.Permanent(err)
 }
+
+func IsPermanent(err error) (*backoff.PermanentError, bool) {
+	p, ok := err.(*backoff.PermanentError)
+
+	return p, ok
+}

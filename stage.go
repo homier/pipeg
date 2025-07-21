@@ -9,17 +9,20 @@ import (
 )
 
 type Stager[T any] interface {
-	SetLogger(logger *slog.Logger)
 	GetConfig() StageConfig
 	GetName() string
 
 	Execute(ctx context.Context, entry T) error
+
+	setLogger(logger *slog.Logger)
+	setRetrier(retrier Retrier)
 }
 
 type Stage[T any] struct {
-	Name   string
-	Config StageConfig
-	Logger *slog.Logger
+	Name    string
+	Config  StageConfig
+	Logger  *slog.Logger
+	Retrier Retrier
 
 	Do StageDo[T]
 }
@@ -28,8 +31,23 @@ type StageDo[T any] func(ctx context.Context, logger *slog.Logger, entry T) erro
 
 var _ Stager[any] = (*Stage[any])(nil)
 
+type StageConfig struct {
+	Disabled bool `json:"disabled"`
+
+	Timeout time.Duration `json:"timeout"`
+}
+
 func NewStage[T any](name string, doFunc StageDo[T], config StageConfig) *Stage[T] {
 	return &Stage[T]{Name: name, Config: config, Do: doFunc}
+}
+
+func NewStageRetryable[T any](name string, doFunc StageDo[T], config StageConfig, retrier Retrier) *Stage[T] {
+	return &Stage[T]{
+		Name:    name,
+		Config:  config,
+		Retrier: retrier,
+		Do:      doFunc,
+	}
 }
 
 // GetName implements Stager.
@@ -42,9 +60,15 @@ func (s *Stage[T]) GetConfig() StageConfig {
 	return s.Config
 }
 
-// SetLogger implements Stager.
-func (s *Stage[T]) SetLogger(logger *slog.Logger) {
+// setLogger implements Stager.
+func (s *Stage[T]) setLogger(logger *slog.Logger) {
 	s.Logger = logger
+}
+
+func (s *Stage[T]) setRetrier(retrier Retrier) {
+	if s.Retrier == nil {
+		s.Retrier = retrier
+	}
 }
 
 // Execute implements Stager.
@@ -52,50 +76,19 @@ func (s *Stage[T]) Execute(ctx context.Context, entry T) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	return s.Do(ctx, s.Logger, entry)
-}
-
-type StageConfig struct {
-	Disabled bool `json:"disabled"`
-
-	Timeout time.Duration `json:"timeout"`
-
-	Retry *StageRetry `json:"retry"`
-}
-
-type StageRetry struct {
-	Policy              StageRetryPolicy `json:"stage_retry_policy"`
-	MaxAttempts         uint             `json:"max_attempts"`
-	MaxElapsedTime      time.Duration    `json:"max_elapsed_time"`
-	MaxInterval         time.Duration    `json:"max_interval"`
-	RandomizationFactor float64          `json:"randomization_factor"`
-	Multiplier          float64          `json:"multiplier"`
-}
-
-type StageRetryPolicy int
-
-const (
-	StageRetryPolicyExponential StageRetryPolicy = iota
-	StageRetryPolicyConstant
-	StageRetryPolicyImmediate
-)
-
-const (
-	StageRetryDefaultPolicy              = StageRetryPolicyExponential
-	StageRetryDefaultMaxAttempts         = uint(0)
-	StageRetryDefaultMaxElapsedTime      = time.Second * 15
-	StageRetryDefaultMaxInterval         = time.Second * 5
-	StageRetryDefaultRandomizationFactor = backoff.DefaultRandomizationFactor
-	StageRetryDefaultMultiplier          = backoff.DefaultMultiplier
-)
-
-func StageRetryDefault() *StageRetry {
-	return &StageRetry{
-		Policy:              StageRetryDefaultPolicy,
-		MaxAttempts:         StageRetryDefaultMaxAttempts,
-		MaxElapsedTime:      StageRetryDefaultMaxElapsedTime,
-		MaxInterval:         StageRetryDefaultMaxInterval,
-		RandomizationFactor: StageRetryDefaultRandomizationFactor,
-		Multiplier:          StageRetryDefaultMultiplier,
+	if s.Retrier == nil {
+		return s.Do(ctx, s.Logger, entry)
 	}
+
+	return s.Retrier.Retry(ctx, func() (any, error) {
+		if err := s.Do(ctx, s.Logger, entry); err != nil {
+			if _, ok := IsBreak(err); ok {
+				return nil, backoff.Permanent(err)
+			}
+
+			return nil, err
+		}
+
+		return nil, nil
+	})
 }

@@ -1,4 +1,4 @@
-package pipeg
+package metrics
 
 type Metricer interface {
 	IncPipelineFailed(pipeline string, reason string)
